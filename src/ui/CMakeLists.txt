@@ -68,6 +68,10 @@ if(WIN32)
     set(REXUI_PLATFORM_SOURCES
         surface_win.cpp
     )
+elseif(ANDROID)
+    set(REXUI_PLATFORM_SOURCES
+        surface_android.cpp
+    )
 elseif(APPLE)
     set(REXUI_PLATFORM_SOURCES
         surface_mac.cpp
@@ -171,7 +175,7 @@ if(REXGLUE_USE_VULKAN)
         target_compile_definitions(rexui-vulkan PRIVATE REX_HAS_FIDELITYFX_RUNTIME=1)
     endif()
 
-    if(UNIX AND NOT APPLE)
+    if(UNIX AND NOT APPLE AND NOT ANDROID)
         target_include_directories(rexui-vulkan PUBLIC
             ${X11_XCB_INCLUDE_DIRS}
             ${WAYLAND_INCLUDE_DIRS}
@@ -219,7 +223,7 @@ if(REXGLUE_USE_VULKAN)
 endif()
 
 # Platform-specific dependencies
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(X11_XCB REQUIRED x11-xcb)
     # Required, not optional: vulkan/api.h pulls in <wayland-client.h> on every
@@ -234,6 +238,8 @@ if(UNIX AND NOT APPLE)
         ${X11_XCB_LIBRARIES}
         ${WAYLAND_LIBRARIES}
     )
+elseif(ANDROID)
+    target_link_libraries(rexui PUBLIC android)
 elseif(APPLE)
     target_link_libraries(rexui PRIVATE "-framework CoreFoundation")
 endif()
