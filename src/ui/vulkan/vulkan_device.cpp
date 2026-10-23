@@ -62,6 +62,14 @@ struct VulkanFeatures {
 std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
     const bool with_gpu_emulation, const bool with_swapchain) {
+  return CreateIfSupported(vulkan_instance, physical_device, with_gpu_emulation,
+                           with_swapchain, false);
+}
+
+std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
+    const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
+    const bool with_gpu_emulation, const bool with_swapchain,
+    const bool with_geometry_shader) {
   assert_not_null(vulkan_instance);
   assert_not_null(physical_device);
 
@@ -643,6 +651,9 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_FEATURE(shaderCullDistance)
     XE_UI_VULKAN_FEATURE(sparseBinding)
     XE_UI_VULKAN_FEATURE(sparseResidencyBuffer)
+  }
+  if (with_geometry_shader) {
+    XE_UI_VULKAN_FEATURE(geometryShader)
   }
 
   if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {

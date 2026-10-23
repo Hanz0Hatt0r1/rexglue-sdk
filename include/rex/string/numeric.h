@@ -26,7 +26,7 @@
 #include <rex/string/utf8.h>
 #include <rex/vec128.h>
 
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_ANDROID
 #include <locale.h>
 #endif
 
@@ -114,16 +114,16 @@ inline T ifs(const std::string_view value, bool force_hex) {
   return result;
 }
 
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_ANDROID
 template <typename T>
 inline std::from_chars_result portable_float_from_chars(const char* first, const char* last,
                                                         T& value) {
   static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>);
 
-  // AppleClang's libc++ does not provide floating-point std::from_chars on all
-  // supported SDK versions. Match from_chars semantics with a C-locale parser:
-  // no leading whitespace or '+', no global locale dependency, and distinct
-  // invalid-input and range errors.
+  // AppleClang's libc++ and Android NDK's libc++ do not provide floating-point
+  // std::from_chars on all supported SDK versions. Match its semantics with a
+  // C-locale parser: no leading whitespace or '+', no process-global locale
+  // dependency, and distinct invalid-input and range errors.
   if (first == last || *first == '+' || *first == ' ' || *first == '\f' || *first == '\n' ||
       *first == '\r' || *first == '\t' || *first == '\v') {
     return {first, std::errc::invalid_argument};
@@ -145,11 +145,26 @@ inline std::from_chars_result portable_float_from_chars(const char* first, const
   char* end = nullptr;
   errno = 0;
   T parsed_value;
+#if REX_PLATFORM_MAC
   if constexpr (std::is_same_v<T, float>) {
     parsed_value = strtof_l(buffer, &end, c_numeric_locale);
   } else {
     parsed_value = strtod_l(buffer, &end, c_numeric_locale);
   }
+#else
+  // Android exposes strtof_l/strtod_l only from API 26. uselocale is
+  // thread-local and lets older Android targets use the same C-locale parser.
+  locale_t previous_locale = uselocale(c_numeric_locale);
+  if (!previous_locale) {
+    return {first, std::errc::invalid_argument};
+  }
+  if constexpr (std::is_same_v<T, float>) {
+    parsed_value = std::strtof(buffer, &end);
+  } else {
+    parsed_value = std::strtod(buffer, &end);
+  }
+  uselocale(previous_locale);
+#endif
   if (end == buffer) {
     return {first, std::errc::invalid_argument};
   }
@@ -189,7 +204,7 @@ inline T fpfs(const std::string_view value, bool force_hex) {
     }
     std::memcpy(&result, &pun, sizeof(PUN));
   } else {
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_ANDROID
     auto [p, error] = portable_float_from_chars(range.data(), range.data() + range.size(), result);
 #else
     auto [p, error] = std::from_chars(range.data(), range.data() + range.size(), result,
@@ -316,7 +331,7 @@ inline vec128_t from_string<vec128_t>(const std::string_view value, bool force_h
         assert_always();
         return vec128_t();
       }
-#if REX_PLATFORM_MAC
+#if REX_PLATFORM_MAC || REX_PLATFORM_ANDROID
       auto result = detail::portable_float_from_chars(p, end, v.f32[i]);
 #else
       auto result = std::from_chars(p, end, v.f32[i], std::chars_format::general);

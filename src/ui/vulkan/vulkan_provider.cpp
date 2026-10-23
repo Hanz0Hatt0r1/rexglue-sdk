@@ -46,6 +46,12 @@ namespace vulkan {
 
 std::unique_ptr<VulkanProvider> VulkanProvider::Create(const bool with_gpu_emulation,
                                                        const bool with_presentation) {
+  return Create(with_gpu_emulation, with_presentation, false);
+}
+
+std::unique_ptr<VulkanProvider> VulkanProvider::Create(const bool with_gpu_emulation,
+                                                       const bool with_presentation,
+                                                       const bool with_geometry_shader) {
   std::unique_ptr<VulkanProvider> provider(new VulkanProvider());
 
   provider->vulkan_instance_ =
@@ -79,18 +85,21 @@ std::unique_ptr<VulkanProvider> VulkanProvider::Create(const bool with_gpu_emula
       uint32_t(REXCVAR_GET(vulkan_device)) < physical_devices.size()) {
     provider->vulkan_device_ = VulkanDevice::CreateIfSupported(
         provider->vulkan_instance_.get(), physical_devices[REXCVAR_GET(vulkan_device)],
-        with_gpu_emulation, with_presentation);
+        with_gpu_emulation, with_presentation, with_geometry_shader);
   }
 
   if (!provider->vulkan_device_) {
     std::vector<VkPhysicalDevice> physical_devices_ordered = physical_devices;
-    bool prefer_geometry_shader = REXCVAR_GET(vulkan_prefer_geometry_shader);
+    bool prefer_geometry_shader =
+        with_geometry_shader ||
+        (with_gpu_emulation && REXCVAR_GET(vulkan_prefer_geometry_shader));
     bool prefer_fragment_stores = REXCVAR_GET(vulkan_prefer_fragment_stores_and_atomics);
     bool prefer_vertex_stores = REXCVAR_GET(vulkan_prefer_vertex_pipeline_stores_and_atomics);
     bool prefer_fill_mode_non_solid = REXCVAR_GET(vulkan_prefer_fill_mode_non_solid);
-    if (with_gpu_emulation && physical_devices.size() > 1 &&
-        (prefer_geometry_shader || prefer_fragment_stores || prefer_vertex_stores ||
-         prefer_fill_mode_non_solid)) {
+    if (physical_devices.size() > 1 &&
+        (prefer_geometry_shader ||
+         (with_gpu_emulation && (prefer_fragment_stores || prefer_vertex_stores ||
+                                 prefer_fill_mode_non_solid)))) {
       struct PhysicalDeviceScore {
         VkPhysicalDevice physical_device;
         uint32_t score;
@@ -104,13 +113,16 @@ std::unique_ptr<VulkanProvider> VulkanProvider::Create(const bool with_gpu_emula
         if (prefer_geometry_shader && supported_features.geometryShader) {
           ++score;
         }
-        if (prefer_fragment_stores && supported_features.fragmentStoresAndAtomics) {
+        if (with_gpu_emulation && prefer_fragment_stores &&
+            supported_features.fragmentStoresAndAtomics) {
           ++score;
         }
-        if (prefer_vertex_stores && supported_features.vertexPipelineStoresAndAtomics) {
+        if (with_gpu_emulation && prefer_vertex_stores &&
+            supported_features.vertexPipelineStoresAndAtomics) {
           ++score;
         }
-        if (prefer_fill_mode_non_solid && supported_features.fillModeNonSolid) {
+        if (with_gpu_emulation && prefer_fill_mode_non_solid &&
+            supported_features.fillModeNonSolid) {
           ++score;
         }
         scored_devices.push_back({physical_device, score});
@@ -132,7 +144,8 @@ std::unique_ptr<VulkanProvider> VulkanProvider::Create(const bool with_gpu_emula
 
     for (const VkPhysicalDevice physical_device : physical_devices_ordered) {
       provider->vulkan_device_ = VulkanDevice::CreateIfSupported(
-          provider->vulkan_instance_.get(), physical_device, with_gpu_emulation, with_presentation);
+          provider->vulkan_instance_.get(), physical_device, with_gpu_emulation, with_presentation,
+          with_geometry_shader);
       if (provider->vulkan_device_) {
         break;
       }
