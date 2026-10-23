@@ -85,10 +85,6 @@ set(REXUI_SOURCES
     ${REXUI_PLATFORM_SOURCES}
 )
 
-if(REXGLUE_USE_VULKAN)
-    list(APPEND REXUI_SOURCES ${REXUI_VULKAN_SOURCES})
-endif()
-
 if(REXGLUE_USE_D3D12)
     list(APPEND REXUI_SOURCES ${REXUI_D3D12_SOURCES})
 endif()
@@ -115,6 +111,83 @@ target_link_libraries(rexui PUBLIC
     SDL3::SDL3
 )
 target_link_libraries(rexui PRIVATE utf8cpp)
+
+# Keep the Vulkan provider/presenter out of librexruntime. GPU plugins link
+# this object target explicitly, so a project-owned plugin can reuse the host
+# Vulkan presentation path without linking rexgpu-xenos.
+if(REXGLUE_USE_VULKAN)
+    add_library(rexui-vulkan OBJECT ${REXUI_VULKAN_SOURCES})
+    add_library(rex::ui-vulkan ALIAS rexui-vulkan)
+
+    rex_target_pch(rexui-vulkan <rex/math.h>)
+
+    target_include_directories(rexui-vulkan PUBLIC
+        $<BUILD_INTERFACE:${REXGLUE_ROOT}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_include_directories(rexui-vulkan PRIVATE
+        ${PROJECT_BINARY_DIR}/include
+        ${REXGLUE_ROOT}/src
+        ${REXGLUE_ROOT}/thirdparty/renderdoc
+        ${REXGLUE_ROOT}/thirdparty/stb
+    )
+    target_compile_definitions(rexui-vulkan PUBLIC REX_HAS_VULKAN=1)
+    if(REXGLUE_USE_D3D12)
+        target_compile_definitions(rexui-vulkan PUBLIC REX_HAS_D3D12=1)
+    endif()
+    if(REXGLUE_ENABLE_TRACY)
+        target_compile_definitions(rexui-vulkan PRIVATE
+            $<$<NOT:$<CONFIG:Release>>:REXGLUE_ENABLE_PROFILING>
+        )
+    endif()
+    if(REXGLUE_ENABLE_PERF_COUNTERS)
+        target_compile_definitions(rexui-vulkan PRIVATE
+            $<$<NOT:$<CONFIG:Release>>:REXGLUE_ENABLE_PERF_COUNTERS>
+        )
+    endif()
+    if(WIN32)
+        target_compile_definitions(rexui-vulkan PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    endif()
+    target_link_libraries(rexui-vulkan PUBLIC
+        fmt::fmt
+        simde
+        tomlplusplus
+        spdlog::spdlog
+        SDL3::SDL3
+        Vulkan::Headers
+        GPUOpen::VulkanMemoryAllocator
+        spirv-tools-headers
+    )
+
+    if(REXGLUE_FIDELITYFX_SOURCE_DIR AND EXISTS "${REXGLUE_FIDELITYFX_SOURCE_DIR}/sdk/include")
+        target_include_directories(rexui-vulkan PRIVATE
+            "${REXGLUE_FIDELITYFX_SOURCE_DIR}/sdk/include"
+            "${REXGLUE_FIDELITYFX_SOURCE_DIR}/ffx-api/include"
+        )
+        target_compile_definitions(rexui-vulkan PRIVATE REX_HAS_FIDELITYFX_SDK=1)
+    endif()
+    if(TARGET amd_fidelityfx_vk)
+        target_link_libraries(rexui-vulkan PRIVATE amd_fidelityfx_vk)
+        target_compile_definitions(rexui-vulkan PRIVATE REX_HAS_FIDELITYFX_RUNTIME=1)
+    endif()
+
+    if(UNIX AND NOT APPLE)
+        target_include_directories(rexui-vulkan PUBLIC
+            ${X11_XCB_INCLUDE_DIRS}
+            ${WAYLAND_INCLUDE_DIRS}
+        )
+        target_link_libraries(rexui-vulkan PUBLIC
+            ${X11_XCB_LIBRARIES}
+            ${WAYLAND_LIBRARIES}
+        )
+    elseif(APPLE)
+        target_link_libraries(rexui-vulkan PRIVATE "-framework CoreFoundation")
+    endif()
+
+    if(WIN32)
+        target_link_libraries(rexui-vulkan PUBLIC dxgi dxguid)
+    endif()
+endif()
 
 if(REXGLUE_FIDELITYFX_SOURCE_DIR AND EXISTS "${REXGLUE_FIDELITYFX_SOURCE_DIR}/sdk/include")
     target_include_directories(rexui PRIVATE
@@ -173,4 +246,3 @@ endif()
 if(REXGLUE_USE_D3D12)
     target_link_libraries(rexui PUBLIC dxc-headers)
 endif()
-

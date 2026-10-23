@@ -140,6 +140,7 @@ target_link_libraries(rexgpu-xenos PRIVATE
 
 if(REXGLUE_USE_VULKAN)
     target_link_libraries(rexgpu-xenos PRIVATE
+        rexui-vulkan
         Vulkan::Headers
         glslang::SPIRV
         GPUOpen::VulkanMemoryAllocator
