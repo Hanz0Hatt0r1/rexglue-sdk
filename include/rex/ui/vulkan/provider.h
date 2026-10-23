@@ -24,6 +24,11 @@ namespace vulkan {
 class VulkanProvider : public GraphicsProvider {
  public:
   static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation);
+  // Requests geometryShader without enabling GPU-emulation features. If the
+  // selected device lacks the feature, the provider still initializes and
+  // properties().geometryShader remains false.
+  static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation,
+                                               bool with_geometry_shader);
 
   VulkanInstance* vulkan_instance() const { return vulkan_instance_.get(); }
 

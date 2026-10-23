@@ -26,6 +26,11 @@ class VulkanDevice {
                                                          VkPhysicalDevice physical_device,
                                                          bool with_gpu_emulation,
                                                          bool with_swapchain);
+  static std::unique_ptr<VulkanDevice> CreateIfSupported(const VulkanInstance* vulkan_instance,
+                                                         VkPhysicalDevice physical_device,
+                                                         bool with_gpu_emulation,
+                                                         bool with_swapchain,
+                                                         bool with_geometry_shader);
 
   VulkanDevice(const VulkanDevice&) = delete;
   VulkanDevice& operator=(const VulkanDevice&) = delete;
