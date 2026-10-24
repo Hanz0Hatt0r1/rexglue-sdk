@@ -31,6 +31,12 @@ class VulkanDevice {
                                                          bool with_gpu_emulation,
                                                          bool with_swapchain,
                                                          bool with_geometry_shader);
+  static std::unique_ptr<VulkanDevice> CreateIfSupported(const VulkanInstance* vulkan_instance,
+                                                         VkPhysicalDevice physical_device,
+                                                         bool with_gpu_emulation,
+                                                         bool with_swapchain,
+                                                         bool with_geometry_shader,
+                                                         bool with_depth_stencil_resolve);
 
   VulkanDevice(const VulkanDevice&) = delete;
   VulkanDevice& operator=(const VulkanDevice&) = delete;
@@ -103,6 +109,7 @@ class VulkanDevice {
     bool fullDrawIndexUint32 = false;
     bool independentBlend = false;
     bool geometryShader = false;
+    bool depthStencilResolveSampleZero = false;
     bool tessellationShader = false;
     bool sampleRateShading = false;
     bool depthClamp = false;
@@ -176,8 +183,9 @@ class VulkanDevice {
   };
 
   // Properties of the core API and enabled extensions, and enabled features.
-  // Some supported functionality is enabled conditionally based on the
-  // `with_swapchain` and `with_gpu_emulation` options.
+  // Some functionality is enabled conditionally based on options such as
+  // `with_swapchain`, `with_gpu_emulation`, `with_geometry_shader`, and
+  // `with_depth_stencil_resolve`.
   const Properties& properties() const { return properties_; }
 
   // Enabled extensions not fully covered by the device properties and optional
@@ -191,6 +199,9 @@ class VulkanDevice {
     bool ext_EXT_shader_stencil_export = false;         // #141
     bool ext_1_1_KHR_get_memory_requirements2 = false;  // #147
     bool ext_1_2_KHR_image_format_list = false;         // #148
+    // Promoted to Vulkan 1.2; enabled together when depth/stencil resolve is requested.
+    bool ext_1_2_KHR_create_renderpass2 = false;
+    bool ext_1_2_KHR_depth_stencil_resolve = false;
     // Has optional features not implied by this being true.
     bool ext_1_1_KHR_sampler_ycbcr_conversion = false;  // #157
     bool ext_1_1_KHR_bind_memory2 = false;              // #158

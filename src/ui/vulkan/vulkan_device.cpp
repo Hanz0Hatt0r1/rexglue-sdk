@@ -62,14 +62,22 @@ struct VulkanFeatures {
 std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
     const bool with_gpu_emulation, const bool with_swapchain) {
-  return CreateIfSupported(vulkan_instance, physical_device, with_gpu_emulation,
-                           with_swapchain, false);
+  return CreateIfSupported(vulkan_instance, physical_device, with_gpu_emulation, with_swapchain,
+                           false, false);
 }
 
 std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
     const bool with_gpu_emulation, const bool with_swapchain,
     const bool with_geometry_shader) {
+  return CreateIfSupported(vulkan_instance, physical_device, with_gpu_emulation, with_swapchain,
+                           with_geometry_shader, false);
+}
+
+std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
+    const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
+    const bool with_gpu_emulation, const bool with_swapchain, const bool with_geometry_shader,
+    const bool with_depth_stencil_resolve) {
   assert_not_null(vulkan_instance);
   assert_not_null(physical_device);
 
@@ -185,6 +193,12 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_LOCAL_EXTENSION(KHR_portability_subset)
     // #197
     XE_UI_VULKAN_LOCAL_PROMOTED_EXTENSION(KHR_driver_properties, 1, 2)
+    if (with_depth_stencil_resolve) {
+      // Resolve support is optional and independent of GPU-emulation features.
+      // The pair is removed below unless both Vulkan 1.1 extensions are present.
+      XE_UI_VULKAN_STRUCT_PROMOTED_EXTENSION(KHR_create_renderpass2, 1, 2)
+      XE_UI_VULKAN_STRUCT_PROMOTED_EXTENSION(KHR_depth_stencil_resolve, 1, 2)
+    }
   }
 
   // Used by the Vulkan Memory Allocator and potentially by Xenia.
@@ -290,6 +304,19 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     }
   }
 
+  if (with_depth_stencil_resolve && (!device->extensions_.ext_1_2_KHR_create_renderpass2 ||
+                                     !device->extensions_.ext_1_2_KHR_depth_stencil_resolve)) {
+    enabled_extensions.erase(
+        std::remove_if(enabled_extensions.begin(), enabled_extensions.end(),
+                       [](const char* name) {
+                         return std::strcmp(name, "VK_KHR_create_renderpass2") == 0 ||
+                                std::strcmp(name, "VK_KHR_depth_stencil_resolve") == 0;
+                       }),
+        enabled_extensions.end());
+    device->extensions_.ext_1_2_KHR_create_renderpass2 = false;
+    device->extensions_.ext_1_2_KHR_depth_stencil_resolve = false;
+  }
+
   if (with_swapchain && !device->extensions_.ext_KHR_swapchain) {
     REXLOG_WARN("Vulkan device '{}' doesn't support swapchains", properties.deviceName);
     return nullptr;
@@ -307,6 +334,10 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   // VK_KHR_get_physical_device_properties2.
 
   VkPhysicalDeviceProperties2 properties_2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+
+  VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_properties = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_STENCIL_RESOLVE_PROPERTIES};
+  bool depth_stencil_resolve_sample_zero_supported = false;
 
   VkPhysicalDeviceFeatures2 supported_features_2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 
@@ -384,8 +415,19 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     if (device->extensions_.ext_EXT_robustness2) {
       features_EXT_robustness2.Link(supported_features_2, device_create_info);
     }
+    if (with_depth_stencil_resolve && device->extensions_.ext_1_2_KHR_create_renderpass2 &&
+        device->extensions_.ext_1_2_KHR_depth_stencil_resolve) {
+      depth_stencil_resolve_properties.pNext = properties_2.pNext;
+      properties_2.pNext = &depth_stencil_resolve_properties;
+    }
     ifn.vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
     ifn.vkGetPhysicalDeviceFeatures2(physical_device, &supported_features_2);
+    const VkResolveModeFlags sample_zero = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+    depth_stencil_resolve_sample_zero_supported =
+        with_depth_stencil_resolve && device->extensions_.ext_1_2_KHR_create_renderpass2 &&
+        device->extensions_.ext_1_2_KHR_depth_stencil_resolve &&
+        (depth_stencil_resolve_properties.supportedDepthResolveModes & sample_zero) != 0 &&
+        (depth_stencil_resolve_properties.supportedStencilResolveModes & sample_zero) != 0;
   }
 
   uint32_t queue_family_count = 0;
@@ -759,6 +801,18 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
         "'{}': {}",
         properties.deviceName, vk::to_string(vk::Result(device_create_result)));
     return nullptr;
+  }
+
+  if (depth_stencil_resolve_sample_zero_supported) {
+    const auto create_render_pass_2 =
+        ifn.vkGetDeviceProcAddr(device->device_, "vkCreateRenderPass2");
+    const auto create_render_pass_2_khr =
+        ifn.vkGetDeviceProcAddr(device->device_, "vkCreateRenderPass2KHR");
+    device->properties_.depthStencilResolveSampleZero =
+        create_render_pass_2 || create_render_pass_2_khr;
+    if (!device->properties_.depthStencilResolveSampleZero) {
+      REXLOG_WARN("Vulkan device '{}' lacks a usable renderpass2 command", properties.deviceName);
+    }
   }
 
   // Load device functions.
