@@ -107,6 +107,9 @@ class VulkanInstance {
     bool ext_EXT_metal_surface = false;  // #217
 #endif
     bool ext_1_1_KHR_get_physical_device_properties2 = false;  // #60
+    bool ext_KHR_get_surface_capabilities2 = false;            // #37
+    bool ext_KHR_surface_maintenance1 = false;                 // #487
+    bool ext_EXT_surface_maintenance1 = false;                 // #275
     bool ext_EXT_debug_utils = false;                          // #129
     bool ext_KHR_portability_enumeration = false;              // #395
   };

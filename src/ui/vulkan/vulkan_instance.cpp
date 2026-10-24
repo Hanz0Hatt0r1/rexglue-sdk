@@ -140,6 +140,18 @@ std::unique_ptr<VulkanInstance> VulkanInstance::Create(const bool with_surface,
   if (with_surface) {
     // #1.
     requested_extensions.emplace("VK_KHR_surface", &vulkan_instance->extensions_.ext_KHR_surface);
+    if (vulkan_instance->extensions_.ext_1_1_KHR_get_physical_device_properties2) {
+      // #37. Required by VK_KHR_surface_maintenance1 and
+      // VK_EXT_surface_maintenance1.
+      requested_extensions.emplace("VK_KHR_get_surface_capabilities2",
+                                   &vulkan_instance->extensions_.ext_KHR_get_surface_capabilities2);
+      // #275 and #487 are instance prerequisites for their matching swapchain
+      // maintenance extension variants.
+      requested_extensions.emplace("VK_EXT_surface_maintenance1",
+                                   &vulkan_instance->extensions_.ext_EXT_surface_maintenance1);
+      requested_extensions.emplace("VK_KHR_surface_maintenance1",
+                                   &vulkan_instance->extensions_.ext_KHR_surface_maintenance1);
+    }
 #ifdef VK_USE_PLATFORM_XCB_KHR
     // #6.
     requested_extensions.emplace("VK_KHR_xcb_surface",

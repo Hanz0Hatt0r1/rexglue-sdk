@@ -281,7 +281,6 @@ class VulkanPresenter final : public Presenter {
       ~Submission();
 
       VkSemaphore acquire_semaphore() const { return acquire_semaphore_; }
-      VkSemaphore present_semaphore() const { return present_semaphore_; }
       VkCommandPool draw_command_pool() const { return draw_command_pool_; }
       VkCommandBuffer draw_command_buffer() const { return draw_command_buffer_; }
 
@@ -292,7 +291,6 @@ class VulkanPresenter final : public Presenter {
 
       const VulkanDevice* vulkan_device_;
       VkSemaphore acquire_semaphore_ = VK_NULL_HANDLE;
-      VkSemaphore present_semaphore_ = VK_NULL_HANDLE;
       VkCommandPool draw_command_pool_ = VK_NULL_HANDLE;
       VkCommandBuffer draw_command_buffer_ = VK_NULL_HANDLE;
     };
@@ -415,6 +413,12 @@ class VulkanPresenter final : public Presenter {
     VkExtent2D swapchain_extent = {};
     bool swapchain_is_fifo = false;
     std::vector<VkImage> swapchain_images;
+    // Present wait semaphores are keyed by acquired image, since a graphics
+    // submission fence does not prove that presentation has consumed its wait.
+    std::vector<VkSemaphore> swapchain_present_semaphores;
+    std::vector<VkFence> swapchain_present_fences;
+    std::vector<uint8_t> swapchain_present_fence_pending;
+    bool swapchain_present_queue_idle_needed = false;
     std::vector<SwapchainFramebuffer> swapchain_framebuffers;
   };
 
