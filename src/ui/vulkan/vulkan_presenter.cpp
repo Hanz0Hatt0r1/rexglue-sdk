@@ -129,9 +129,6 @@ VulkanPresenter::PaintContext::Submission::~Submission() {
     dfn.vkDestroyCommandPool(device, draw_command_pool_, nullptr);
   }
 
-  if (present_semaphore_ != VK_NULL_HANDLE) {
-    dfn.vkDestroySemaphore(device, present_semaphore_, nullptr);
-  }
   if (acquire_semaphore_ != VK_NULL_HANDLE) {
     dfn.vkDestroySemaphore(device, acquire_semaphore_, nullptr);
   }
@@ -152,14 +149,6 @@ bool VulkanPresenter::PaintContext::Submission::Initialize() {
         "semaphore");
     return false;
   }
-  if (dfn.vkCreateSemaphore(device, &semaphore_create_info, nullptr, &present_semaphore_) !=
-      VK_SUCCESS) {
-    REXLOG_ERROR(
-        "VulkanPresenter: Failed to create a swapchain image presentation "
-        "semaphore");
-    return false;
-  }
-
   VkCommandPoolCreateInfo command_pool_create_info;
   command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   command_pool_create_info.pNext = nullptr;
@@ -190,15 +179,8 @@ bool VulkanPresenter::PaintContext::Submission::Initialize() {
 }
 
 VulkanPresenter::~VulkanPresenter() {
-  // Destroy the swapchain after its images are not used for drawing anymore.
-  // This is a confusing part in Vulkan, as vkQueuePresentKHR doesn't signal a
-  // fence clearly indicating when it's safe to destroy a swapchain, so we
-  // assume that its lifetime is tracked internally in the WSI. This is also
-  // done before destroying the semaphore awaited by vkQueuePresentKHR, hoping
-  // that it will prevent the destruction during the semaphore wait in
-  // vkQueuePresentKHR execution (or between the vkQueueSubmit semaphore signal
-  // and the vkQueuePresentKHR semaphore wait).
-  // This will await completion of all paint submissions also.
+  // This also waits for all paint submissions and present operations before
+  // destroying the swapchain resources.
   paint_context_.DestroySwapchainAndVulkanSurface();
 
   // Await completion of the usage of everything before destroying anything
@@ -988,6 +970,38 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
     return SurfacePaintConnectResult::kFailure;
   }
 
+  // A fence for the graphics submission does not prove that presentation has
+  // consumed its wait semaphore. Give each swapchain image its own semaphore
+  // and reuse it only after vkAcquireNextImageKHR returns that image again.
+  VkSemaphoreCreateInfo present_semaphore_create_info = {};
+  present_semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  paint_context_.swapchain_present_semaphores.reserve(paint_context_.swapchain_images.size());
+  for (size_t i = 0; i < paint_context_.swapchain_images.size(); ++i) {
+    VkSemaphore present_semaphore = VK_NULL_HANDLE;
+    if (dfn.vkCreateSemaphore(device, &present_semaphore_create_info, nullptr,
+                              &present_semaphore) != VK_SUCCESS) {
+      REXLOG_ERROR("VulkanPresenter: Failed to create a swapchain image presentation semaphore");
+      paint_context_.DestroySwapchainAndVulkanSurface();
+      return SurfacePaintConnectResult::kFailure;
+    }
+    paint_context_.swapchain_present_semaphores.push_back(present_semaphore);
+
+    if (vulkan_device_->properties().swapchainMaintenance1) {
+      VkFenceCreateInfo present_fence_create_info = {};
+      present_fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      present_fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      VkFence present_fence = VK_NULL_HANDLE;
+      if (dfn.vkCreateFence(device, &present_fence_create_info, nullptr, &present_fence) !=
+          VK_SUCCESS) {
+        REXLOG_ERROR("VulkanPresenter: Failed to create a swapchain presentation fence");
+        paint_context_.DestroySwapchainAndVulkanSurface();
+        return SurfacePaintConnectResult::kFailure;
+      }
+      paint_context_.swapchain_present_fences.push_back(present_fence);
+      paint_context_.swapchain_present_fence_pending.push_back(0);
+    }
+  }
+
   // Create the image views and the framebuffers.
   assert_true(paint_context_.swapchain_framebuffers.empty());
   paint_context_.swapchain_framebuffers.reserve(paint_context_.swapchain_images.size());
@@ -1426,11 +1440,43 @@ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
 }
 
 VkSwapchainKHR VulkanPresenter::PaintContext::PrepareForSwapchainRetirement() {
-  if (swapchain != VK_NULL_HANDLE) {
-    submission_tracker.AwaitAllSubmissionsCompletion();
-  }
   const VulkanDevice::Functions& dfn = vulkan_device->functions();
   const VkDevice device = vulkan_device->device();
+  if (swapchain != VK_NULL_HANDLE) {
+    submission_tracker.AwaitAllSubmissionsCompletion();
+    const VulkanDevice::Properties& properties = vulkan_device->properties();
+    assert_true(swapchain_present_fences.size() == swapchain_present_fence_pending.size());
+    for (size_t i = 0; i < swapchain_present_fences.size(); ++i) {
+      if (!swapchain_present_fence_pending[i]) {
+        continue;
+      }
+      if (dfn.vkWaitForFences(device, 1, &swapchain_present_fences[i], VK_TRUE, UINT64_MAX) !=
+          VK_SUCCESS) {
+        REXLOG_ERROR(
+            "VulkanPresenter: Failed to wait for a presentation fence before swapchain retirement");
+        swapchain_present_queue_idle_needed = true;
+      }
+    }
+    if (present_queue_family != UINT32_MAX &&
+        (!properties.swapchainMaintenance1 || swapchain_present_queue_idle_needed)) {
+      const VulkanDevice::Queue::Acquisition queue_acquisition =
+          vulkan_device->AcquireQueue(present_queue_family, 0);
+      if (dfn.vkQueueWaitIdle(queue_acquisition.queue()) != VK_SUCCESS) {
+        REXLOG_ERROR(
+            "VulkanPresenter: Failed to idle the presentation queue before swapchain retirement");
+      }
+    }
+  }
+  for (VkFence fence : swapchain_present_fences) {
+    dfn.vkDestroyFence(device, fence, nullptr);
+  }
+  swapchain_present_fences.clear();
+  swapchain_present_fence_pending.clear();
+  swapchain_present_queue_idle_needed = false;
+  for (VkSemaphore semaphore : swapchain_present_semaphores) {
+    dfn.vkDestroySemaphore(device, semaphore, nullptr);
+  }
+  swapchain_present_semaphores.clear();
   for (const SwapchainFramebuffer& framebuffer : swapchain_framebuffers) {
     dfn.vkDestroyFramebuffer(device, framebuffer.framebuffer, nullptr);
     dfn.vkDestroyImageView(device, framebuffer.image_view, nullptr);
@@ -1593,6 +1639,26 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     default:
       REXLOG_ERROR("VulkanPresenter: Failed to acquire the swapchain image");
       return PaintResult::kNotPresented;
+  }
+
+  assert_true(swapchain_image_index < paint_context_.swapchain_present_semaphores.size());
+  VkSemaphore present_semaphore =
+      paint_context_.swapchain_present_semaphores[swapchain_image_index];
+  VkFence present_fence = VK_NULL_HANDLE;
+  if (vulkan_device_->properties().swapchainMaintenance1) {
+    present_fence = paint_context_.swapchain_present_fences[swapchain_image_index];
+    if (paint_context_.swapchain_present_fence_pending[swapchain_image_index] &&
+        dfn.vkWaitForFences(device, 1, &present_fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+      REXLOG_ERROR("VulkanPresenter: Failed to wait for a presentation fence before reusing it");
+      paint_context_.swapchain_present_queue_idle_needed = true;
+      return PaintResult::kNotPresentedConnectionOutdated;
+    }
+    paint_context_.swapchain_present_fence_pending[swapchain_image_index] = 0;
+    if (dfn.vkResetFences(device, 1, &present_fence) != VK_SUCCESS) {
+      REXLOG_ERROR("VulkanPresenter: Failed to reset a swapchain presentation fence");
+      paint_context_.swapchain_present_queue_idle_needed = true;
+      present_fence = VK_NULL_HANDLE;
+    }
   }
 
   // Non-zero extents needed for both the viewport (width must not be zero) and
@@ -2174,7 +2240,6 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     paint_context_.ui_setup_command_buffer_current_index = SIZE_MAX;
   }
   command_buffers[command_buffer_count++] = draw_command_buffer;
-  VkSemaphore present_semaphore = paint_submission.present_semaphore();
   VkSubmitInfo submit_info;
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.pNext = nullptr;
@@ -2229,7 +2294,13 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
 
   VkPresentInfoKHR present_info;
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-  present_info.pNext = nullptr;
+  VkSwapchainPresentFenceInfoEXT present_fence_info = {};
+  if (present_fence != VK_NULL_HANDLE) {
+    present_fence_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
+    present_fence_info.swapchainCount = 1;
+    present_fence_info.pFences = &present_fence;
+  }
+  present_info.pNext = present_fence != VK_NULL_HANDLE ? &present_fence_info : nullptr;
   present_info.waitSemaphoreCount = 1;
   present_info.pWaitSemaphores = &present_semaphore;
   present_info.swapchainCount = 1;
@@ -2241,6 +2312,26 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     const VulkanDevice::Queue::Acquisition queue_acquisition =
         vulkan_device_->AcquireQueue(paint_context_.present_queue_family, 0);
     present_result = dfn.vkQueuePresentKHR(queue_acquisition.queue(), &present_info);
+  }
+  switch (present_result) {
+    case VK_SUCCESS:
+    case VK_SUBOPTIMAL_KHR:
+    case VK_ERROR_OUT_OF_DATE_KHR:
+    case VK_ERROR_SURFACE_LOST_KHR:
+    case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT:
+      // These results still enqueue the present wait operation. A supplied
+      // present fence therefore tracks its completion as well.
+      if (present_fence != VK_NULL_HANDLE) {
+        paint_context_.swapchain_present_fence_pending[swapchain_image_index] = 1;
+      } else {
+        paint_context_.swapchain_present_queue_idle_needed = true;
+      }
+      break;
+    default:
+      // Errors that reject queueing do not signal the present fence. Drain the
+      // queue before retiring resources in that case.
+      paint_context_.swapchain_present_queue_idle_needed = true;
+      break;
   }
   switch (present_result) {
     case VK_SUCCESS:

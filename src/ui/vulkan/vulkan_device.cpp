@@ -223,6 +223,8 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   if (with_swapchain) {
     // #2.
     XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain)
+    XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain_maintenance1)
+    XE_UI_VULKAN_STRUCT_EXTENSION(EXT_swapchain_maintenance1)
   }
 
   bool ext_1_2_KHR_sampler_mirror_clamp_to_edge = false;
@@ -374,6 +376,9 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   VulkanFeatures<VkPhysicalDeviceRobustness2FeaturesEXT,
                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT>
       features_EXT_robustness2;
+  VulkanFeatures<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT,
+                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT>
+      features_EXT_swapchain_maintenance1;
 
   if (get_physical_device_properties2_supported) {
     if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {
@@ -414,6 +419,10 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     }
     if (device->extensions_.ext_EXT_robustness2) {
       features_EXT_robustness2.Link(supported_features_2, device_create_info);
+    }
+    if (device->extensions_.ext_KHR_swapchain_maintenance1 ||
+        device->extensions_.ext_EXT_swapchain_maintenance1) {
+      features_EXT_swapchain_maintenance1.Link(supported_features_2, device_create_info);
     }
     if (with_depth_stencil_resolve && device->extensions_.ext_1_2_KHR_create_renderpass2 &&
         device->extensions_.ext_1_2_KHR_depth_stencil_resolve) {
@@ -782,6 +791,10 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     if (with_gpu_emulation) {
       XE_UI_VULKAN_FEATURE_2(features_EXT_robustness2, nullDescriptor)
     }
+  }
+  if (device->extensions_.ext_KHR_swapchain_maintenance1 ||
+      device->extensions_.ext_EXT_swapchain_maintenance1) {
+    XE_UI_VULKAN_FEATURE_2(features_EXT_swapchain_maintenance1, swapchainMaintenance1)
   }
 
 #undef XE_UI_VULKAN_LIMIT
