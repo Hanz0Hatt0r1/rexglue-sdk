@@ -29,6 +29,12 @@ class VulkanProvider : public GraphicsProvider {
   // properties().geometryShader remains false.
   static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation,
                                                bool with_geometry_shader);
+  // Optionally enables depth/stencil resolve independently of GPU emulation.
+  // The device reports whether SAMPLE_ZERO is usable for both aspects; this is
+  // false when the resolve extensions or required commands are unavailable.
+  static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation,
+                                                bool with_geometry_shader,
+                                                bool with_depth_stencil_resolve);
 
   VulkanInstance* vulkan_instance() const { return vulkan_instance_.get(); }
 
