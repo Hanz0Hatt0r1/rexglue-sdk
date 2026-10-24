@@ -223,8 +223,16 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   if (with_swapchain) {
     // #2.
     XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain)
-    XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain_maintenance1)
-    XE_UI_VULKAN_STRUCT_EXTENSION(EXT_swapchain_maintenance1)
+    const VulkanInstance::Extensions& instance_extensions = vulkan_instance->extensions();
+    if (instance_extensions.ext_KHR_surface &&
+        instance_extensions.ext_KHR_get_surface_capabilities2) {
+      if (instance_extensions.ext_KHR_surface_maintenance1) {
+        XE_UI_VULKAN_STRUCT_EXTENSION(KHR_swapchain_maintenance1)
+      }
+      if (instance_extensions.ext_EXT_surface_maintenance1) {
+        XE_UI_VULKAN_STRUCT_EXTENSION(EXT_swapchain_maintenance1)
+      }
+    }
   }
 
   bool ext_1_2_KHR_sampler_mirror_clamp_to_edge = false;
