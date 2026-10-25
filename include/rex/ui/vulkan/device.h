@@ -37,6 +37,13 @@ class VulkanDevice {
                                                          bool with_swapchain,
                                                          bool with_geometry_shader,
                                                          bool with_depth_stencil_resolve);
+  static std::unique_ptr<VulkanDevice> CreateIfSupported(const VulkanInstance* vulkan_instance,
+                                                         VkPhysicalDevice physical_device,
+                                                         bool with_gpu_emulation,
+                                                         bool with_swapchain,
+                                                         bool with_geometry_shader,
+                                                         bool with_depth_stencil_resolve,
+                                                         bool with_sampler_anisotropy);
 
   VulkanDevice(const VulkanDevice&) = delete;
   VulkanDevice& operator=(const VulkanDevice&) = delete;

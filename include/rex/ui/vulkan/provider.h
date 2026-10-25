@@ -35,6 +35,12 @@ class VulkanProvider : public GraphicsProvider {
   static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation,
                                                 bool with_geometry_shader,
                                                 bool with_depth_stencil_resolve);
+  // Optionally enables samplerAnisotropy independently of GPU emulation.
+  // The device reports whether the feature was supported and enabled.
+  static std::unique_ptr<VulkanProvider> Create(bool with_gpu_emulation, bool with_presentation,
+                                                bool with_geometry_shader,
+                                                bool with_depth_stencil_resolve,
+                                                bool with_sampler_anisotropy);
 
   VulkanInstance* vulkan_instance() const { return vulkan_instance_.get(); }
 
