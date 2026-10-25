@@ -59,7 +59,7 @@ class MnkInputDriver final : public InputDriver,
  private:
   bool IsEnabled() const;
   void SetKeyState(uint16_t vk, bool down);
-  void EnqueueKeystroke(uint16_t vk_pad, bool down);
+  void EnqueueKeystroke(uint16_t virtual_key, uint16_t flags);
 
   // Called from the guest thread. The rest of the capture path stays on the UI
   // thread, since every Window call in it reaches SDL.

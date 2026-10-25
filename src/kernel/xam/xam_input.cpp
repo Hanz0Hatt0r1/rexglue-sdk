@@ -31,8 +31,16 @@ using rex::input::X_INPUT_KEYSTROKE;
 using rex::input::X_INPUT_STATE;
 using rex::input::X_INPUT_VIBRATION;
 
-constexpr uint32_t XINPUT_FLAG_GAMEPAD = 0x01;
-constexpr uint32_t XINPUT_FLAG_ANY_USER = 1 << 30;
+constexpr uint32_t XINPUT_FLAG_GAMEPAD = rex::input::X_INPUT_FLAG_GAMEPAD;
+constexpr uint32_t XINPUT_FLAG_ANY_USER = rex::input::X_INPUT_FLAG_ANYUSER;
+constexpr uint32_t XINPUT_FLAG_KEYSTROKE_DEVICES = rex::input::X_INPUT_FLAG_GAMEPAD |
+                                                   rex::input::X_INPUT_FLAG_KEYBOARD |
+                                                   rex::input::X_INPUT_FLAG_REMOTE;
+
+bool HasKeystrokeDevice(uint32_t flags) {
+  const uint32_t devices = flags & 0xFF;
+  return devices == 0 || (devices & XINPUT_FLAG_KEYSTROKE_DEVICES) != 0;
+}
 
 rex::input::InputSystem* input_system() {
   return static_cast<rex::input::InputSystem*>(REX_KERNEL_STATE()->emulator()->input_system());
@@ -142,8 +150,8 @@ u32 XamInputGetKeystroke_entry(u32 user_index, u32 flags, ppc_ptr_t<X_INPUT_KEYS
     return X_ERROR_BAD_ARGUMENTS;
   }
 
-  if ((flags & 0xFF) && (flags & XINPUT_FLAG_GAMEPAD) == 0) {
-    // Ignore any query for other types of devices.
+  if (!HasKeystrokeDevice(flags)) {
+    // Ignore queries for unsupported device types.
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
 
@@ -164,8 +172,8 @@ u32 XamInputGetKeystrokeEx_entry(mapped_u32 user_index_ptr, u32 flags,
     return X_ERROR_BAD_ARGUMENTS;
   }
 
-  if ((flags & 0xFF) && (flags & XINPUT_FLAG_GAMEPAD) == 0) {
-    // Ignore any query for other types of devices.
+  if (!HasKeystrokeDevice(flags)) {
+    // Ignore queries for unsupported device types.
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
 

@@ -374,6 +374,10 @@ X_RESULT MnkInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
   if (!IsEnabled() || id != kMnkDevice) {
     return X_ERROR_DEVICE_NOT_CONNECTED;
   }
+  const uint32_t requested_devices = flags & 0xFF;
+  if (requested_devices != 0 && (requested_devices & X_INPUT_FLAG_KEYBOARD) == 0) {
+    return X_ERROR_DEVICE_NOT_CONNECTED;
+  }
   std::lock_guard lock(state_mutex_);
   if (keystroke_queue_.empty()) {
     return X_ERROR_EMPTY;
@@ -385,11 +389,11 @@ X_RESULT MnkInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
   return X_ERROR_SUCCESS;
 }
 
-void MnkInputDriver::EnqueueKeystroke(uint16_t vk_pad, bool down) {
+void MnkInputDriver::EnqueueKeystroke(uint16_t virtual_key, uint16_t flags) {
   X_INPUT_KEYSTROKE ks = {};
-  ks.virtual_key = vk_pad;
+  ks.virtual_key = virtual_key;
   ks.unicode = 0;
-  ks.flags = down ? X_INPUT_KEYSTROKE_KEYDOWN : X_INPUT_KEYSTROKE_KEYUP;
+  ks.flags = flags;
   // InputSystem stamps the guest user this device is assigned to.
   ks.user_index = 0;
   ks.hid_code = 0;
@@ -486,14 +490,22 @@ void MnkInputDriver::OnKeyDown(rex::ui::KeyEvent& e) {
   std::lock_guard lock(state_mutex_);
   uint16_t vk = static_cast<uint16_t>(e.virtual_key());
   SetKeyState(vk, true);
+  if (vk != static_cast<uint16_t>(VirtualKey::kNone)) {
+    EnqueueKeystroke(vk,
+                     X_INPUT_KEYSTROKE_KEYDOWN | (e.prev_state() ? X_INPUT_KEYSTROKE_REPEAT : 0));
+  }
 }
 
 void MnkInputDriver::OnKeyUp(rex::ui::KeyEvent& e) {
   if (!IsEnabled())
     return;
+  const bool focused = has_focus_.load(std::memory_order_relaxed);
   std::lock_guard lock(state_mutex_);
   uint16_t vk = static_cast<uint16_t>(e.virtual_key());
   SetKeyState(vk, false);
+  if (focused && vk != static_cast<uint16_t>(VirtualKey::kNone)) {
+    EnqueueKeystroke(vk, X_INPUT_KEYSTROKE_KEYUP);
+  }
 }
 
 void MnkInputDriver::OnMouseDown(rex::ui::MouseEvent& e) {
@@ -568,6 +580,9 @@ void MnkInputDriver::OnLostFocus(rex::ui::UISetupEvent&) {
     std::memset(key_down_, 0, sizeof(key_down_));
     mouse_dx_ = 0.0f;
     mouse_dy_ = 0.0f;
+    while (!keystroke_queue_.empty()) {
+      keystroke_queue_.pop();
+    }
   }
   if (attached_window_) {
     ReleaseMouseCaptureFromUIThread(attached_window_);

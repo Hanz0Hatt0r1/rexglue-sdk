@@ -253,6 +253,10 @@ X_RESULT SDLInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
   if (!out_keystroke) {
     return X_ERROR_BAD_ARGUMENTS;
   }
+  const uint32_t requested_devices = flags & 0xFF;
+  if (requested_devices != 0 && (requested_devices & X_INPUT_FLAG_GAMEPAD) == 0) {
+    return X_ERROR_DEVICE_NOT_CONNECTED;
+  }
 
   // The order of this list is also the order in which events are send if
   // multiple buttons change at once.
