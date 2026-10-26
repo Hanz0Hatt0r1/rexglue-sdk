@@ -78,6 +78,14 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
     const bool with_gpu_emulation, const bool with_swapchain, const bool with_geometry_shader,
     const bool with_depth_stencil_resolve) {
+  return CreateIfSupported(vulkan_instance, physical_device, with_gpu_emulation, with_swapchain,
+                           with_geometry_shader, with_depth_stencil_resolve, false);
+}
+
+std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
+    const VulkanInstance* const vulkan_instance, const VkPhysicalDevice physical_device,
+    const bool with_gpu_emulation, const bool with_swapchain, const bool with_geometry_shader,
+    const bool with_depth_stencil_resolve, const bool with_sampler_anisotropy) {
   assert_not_null(vulkan_instance);
   assert_not_null(physical_device);
 
@@ -685,7 +693,6 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_FEATURE(sampleRateShading)
     XE_UI_VULKAN_FEATURE(depthClamp)
     XE_UI_VULKAN_FEATURE(fillModeNonSolid)
-    XE_UI_VULKAN_FEATURE(samplerAnisotropy)
     XE_UI_VULKAN_FEATURE(occlusionQueryPrecise)
     XE_UI_VULKAN_FEATURE(vertexPipelineStoresAndAtomics)
     XE_UI_VULKAN_FEATURE(fragmentStoresAndAtomics)
@@ -693,6 +700,9 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     XE_UI_VULKAN_FEATURE(shaderCullDistance)
     XE_UI_VULKAN_FEATURE(sparseBinding)
     XE_UI_VULKAN_FEATURE(sparseResidencyBuffer)
+  }
+  if (with_sampler_anisotropy || with_gpu_emulation) {
+    XE_UI_VULKAN_FEATURE(samplerAnisotropy)
   }
   if (with_geometry_shader) {
     XE_UI_VULKAN_FEATURE(geometryShader)
