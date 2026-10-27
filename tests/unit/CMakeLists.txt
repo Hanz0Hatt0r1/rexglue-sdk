@@ -17,6 +17,7 @@ add_executable(unit_tests
     system/function_dispatcher_test.cpp
     input/input_assignment_test.cpp
     codegen/codegen_writer_test.cpp
+    codegen/system_builder_test.cpp
     codegen/output_partition_test.cpp
     codegen/output_stamp_test.cpp
 )
@@ -29,6 +30,7 @@ target_sources(unit_tests PRIVATE
 target_include_directories(unit_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/thirdparty/disasm
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
